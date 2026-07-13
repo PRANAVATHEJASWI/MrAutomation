@@ -628,6 +628,11 @@ export const api = {
     }),
   getStepMethods: (flowId, stepId) =>
     request(`/flows/${flowId}/steps/${stepId}/methods`),
+  reorderStepMethods: (flowId, stepId, stepMethodIds) =>
+    request(`/flows/${flowId}/steps/${stepId}/methods/reorder`, {
+      method: "PUT",
+      body: JSON.stringify(stepMethodIds),
+    }),
   detachMethodFromStep: (stepMethodId) =>
     request(`/step-methods/${stepMethodId}`, { method: "DELETE" }),
 

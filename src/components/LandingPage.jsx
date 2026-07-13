@@ -91,6 +91,18 @@ function LandingPage() {
             >
               Performance Test
             </Button>
+            <Button
+              variant="secondary"
+              onClick={() => navigate("/mocks")}
+              icon={
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="4" y="4" width="16" height="16" rx="2" />
+                  <path d="M8 9h8M8 13h5M8 17h8" />
+                </svg>
+              }
+            >
+              Mock Server
+            </Button>
           </div>
         </div>
         <div className={styles.quickStats}>

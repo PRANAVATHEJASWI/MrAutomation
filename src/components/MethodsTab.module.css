@@ -33,6 +33,117 @@
   gap: 16px;
 }
 
+.attachedOrderPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  border-radius: 10px;
+  background: rgba(16, 185, 129, 0.06);
+}
+
+.attachedOrderHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.attachedOrderHeader div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.attachedOrderHeader strong {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.attachedOrderHeader span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.orderSaving {
+  color: var(--accent) !important;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.attachedOrderList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.attachedOrderRow {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.72));
+}
+
+.orderIndex {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.orderMethodInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.orderMethodInfo strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orderMethodInfo span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.orderControls {
+  display: flex;
+  gap: 6px;
+}
+
+.orderControls button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-input, rgba(255, 255, 255, 0.8));
+  color: var(--text-primary);
+  cursor: pointer;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.orderControls button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .methodCard {
   padding: 16px;
   border: 1px solid var(--border);

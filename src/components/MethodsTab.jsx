@@ -114,6 +114,7 @@ function MethodsTab({ flowId, stepId }) {
 
   const [stepMethods, setStepMethods] = useState([]);
   const [detachingStepMethodId, setDetachingStepMethodId] = useState(null);
+  const [reorderingStepMethods, setReorderingStepMethods] = useState(false);
 
   // Parameter types
   const [availableParameterTypes, setAvailableParameterTypes] = useState([]);
@@ -156,6 +157,29 @@ function MethodsTab({ flowId, stepId }) {
   function getStepMethodId(attached) {
     if (!attached) return null;
     return attached.stepMethodId ?? attached.id ?? null;
+  }
+
+  function getStepMethodName(attached) {
+    if (!attached) return "Method";
+    return attached.methodName || attached.method?.name || attached.name || `Method ${attached.methodId || attached.method?.id || ""}`;
+  }
+
+  function getSortedStepMethods(list = stepMethods) {
+    return [...(Array.isArray(list) ? list : [])].sort((a, b) => {
+      const parsedOrderA = parseInt(a?.executionOrder);
+      const parsedOrderB = parseInt(b?.executionOrder);
+      const orderA = Number.isFinite(parsedOrderA) ? parsedOrderA : 999999;
+      const orderB = Number.isFinite(parsedOrderB) ? parsedOrderB : 999999;
+      if (orderA !== orderB) return orderA - orderB;
+      return (getStepMethodId(a) || 0) - (getStepMethodId(b) || 0);
+    });
+  }
+
+  function getAttachedOrder(attached) {
+    if (!attached) return null;
+    const attachedId = getStepMethodId(attached);
+    const idx = getSortedStepMethods().findIndex((sm) => getStepMethodId(sm) === attachedId);
+    return idx >= 0 ? idx + 1 : null;
   }
 
   function getStepMethodBindings(attached) {
@@ -451,6 +475,31 @@ function MethodsTab({ flowId, stepId }) {
     }
   }
 
+  async function handleMoveStepMethod(stepMethodId, direction) {
+    const sorted = getSortedStepMethods();
+    const index = sorted.findIndex((sm) => getStepMethodId(sm) === stepMethodId);
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= sorted.length) return;
+
+    const next = [...sorted];
+    [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+    const orderedIds = next.map(getStepMethodId).filter(Boolean);
+    const previous = stepMethods;
+
+    setReorderingStepMethods(true);
+    setStepMethods(next.map((sm, idx) => ({ ...sm, executionOrder: idx + 1 })));
+    try {
+      await api.reorderStepMethods(flowId, stepId, orderedIds);
+      await fetchStepMethods();
+      toast.success("Method execution order updated");
+    } catch (err) {
+      setStepMethods(previous);
+      toast.error("Failed to update method order: " + err.message);
+    } finally {
+      setReorderingStepMethods(false);
+    }
+  }
+
   function handleAddParameter() {
     setParameters([
       ...parameters,
@@ -554,10 +603,56 @@ function MethodsTab({ flowId, stepId }) {
             No methods available. Create a custom method to get started.
           </div>
         ) : (
-          <div className={styles.methodsList}>
-            {methods.map((method) => {
-              const attached = getAttachedStepMethod(method.id);
-              return (
+          <>
+            {stepMethods.length > 0 && (
+              <div className={styles.attachedOrderPanel}>
+                <div className={styles.attachedOrderHeader}>
+                  <div>
+                    <strong>Attached Execution Order</strong>
+                    <span>Methods run from top to bottom before this step.</span>
+                  </div>
+                  {reorderingStepMethods && <span className={styles.orderSaving}>Saving order...</span>}
+                </div>
+                <div className={styles.attachedOrderList}>
+                  {getSortedStepMethods().map((attachedMethod, idx, ordered) => {
+                    const stepMethodId = getStepMethodId(attachedMethod);
+                    return (
+                      <div key={stepMethodId} className={styles.attachedOrderRow}>
+                        <span className={styles.orderIndex}>{idx + 1}</span>
+                        <div className={styles.orderMethodInfo}>
+                          <strong>{getStepMethodName(attachedMethod)}</strong>
+                          <span>Step method ID: {stepMethodId}</span>
+                        </div>
+                        <div className={styles.orderControls}>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveStepMethod(stepMethodId, -1)}
+                            disabled={idx === 0 || reorderingStepMethods}
+                            title="Move earlier"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveStepMethod(stepMethodId, 1)}
+                            disabled={idx === ordered.length - 1 || reorderingStepMethods}
+                            title="Move later"
+                          >
+                            ↓
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className={styles.methodsList}>
+              {methods.map((method) => {
+                const attached = getAttachedStepMethod(method.id);
+                const attachedOrder = getAttachedOrder(attached);
+                return (
               <div key={method.id} className={`${styles.methodCard} ${attached ? styles.methodCardAttached : ""}`}>
                 <div className={styles.methodHeader}>
                   <div className={styles.methodTitleWrap}>
@@ -567,7 +662,7 @@ function MethodsTab({ flowId, stepId }) {
                     </span>
                     {attached && (
                       <span className={styles.attachedBadge} title="Attached to this step">
-                        ✓ Attached
+                        ✓ Attached {attachedOrder ? `#${attachedOrder}` : ""}
                       </span>
                     )}
                   </div>
@@ -814,9 +909,10 @@ function MethodsTab({ flowId, stepId }) {
                   </div>
                 )}
               </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 

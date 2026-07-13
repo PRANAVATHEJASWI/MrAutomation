@@ -14,6 +14,7 @@ import FeedbackWidget from "./components/FeedbackWidget";
 import AuthPage from "./components/AuthPage";
 import ProfilePage from "./components/ProfilePage";
 import PerformancePage from "./components/PerformancePage";
+import MockServerPage from "./components/MockServerPage";
 import { useModules } from "./context/CollectionContext";
 import { useAuth } from "./context/AuthContext";
 import styles from "./App.module.css";
@@ -93,6 +94,7 @@ export default function App() {
         <Route path="/module/:slug/:id" element={<ModuleLayout />} />
         <Route path="/report" element={<Report />} />
         <Route path="/performance" element={<PerformancePage />} />
+        <Route path="/mocks" element={<MockServerPage />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
       </Routes>
       <Toaster />
