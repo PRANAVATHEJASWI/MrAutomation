@@ -128,6 +128,9 @@ function normalizeScenariosByEndpoint(apiResponse) {
 export default function MockServerPage() {
   const [loading, setLoading] = useState(false);
   const [scenariosByEndpoint, setScenariosByEndpoint] = useState({});
+  const [expandedGroups, setExpandedGroups] = useState({});
+  const [filteredGroupScenarios, setFilteredGroupScenarios] = useState({});
+  const [loadingGroupKey, setLoadingGroupKey] = useState("");
   const [selectedScenarioId, setSelectedScenarioId] = useState(null);
   const [scenarioForm, setScenarioForm] = useState(SCENARIO_FORM);
   const [generatorForm, setGeneratorForm] = useState(GENERATOR_FORM);
@@ -146,6 +149,7 @@ export default function MockServerPage() {
         (Array.isArray(scenarios) ? scenarios : []).map((scenario) => ({
           ...scenario,
           endpoint,
+          method: (scenario?.method || "ANY").toUpperCase(),
         }))
       )
       .sort((a, b) => {
@@ -154,6 +158,25 @@ export default function MockServerPage() {
         return String(a.name || "").localeCompare(String(b.name || ""));
       });
   }, [scenariosByEndpoint]);
+
+  const scenarioGroups = useMemo(() => {
+    const grouped = allScenarios.reduce((acc, scenario) => {
+      const method = String(scenario.method || "ANY").toUpperCase();
+      const endpoint = String(scenario.endpoint || "/");
+      const key = `${method}@@${endpoint}`;
+      if (!acc[key]) {
+        acc[key] = { key, method, endpoint, scenarios: [] };
+      }
+      acc[key].scenarios.push(scenario);
+      return acc;
+    }, {});
+
+    return Object.values(grouped).sort((a, b) => {
+      const endpointCompare = a.endpoint.localeCompare(b.endpoint);
+      if (endpointCompare !== 0) return endpointCompare;
+      return a.method.localeCompare(b.method);
+    });
+  }, [allScenarios]);
 
   const selectedScenario = useMemo(() => {
     if (!selectedScenarioId) return null;
@@ -187,10 +210,46 @@ export default function MockServerPage() {
       ]);
       setScenariosByEndpoint(normalizeScenariosByEndpoint(scenarioResult));
       setOperators(operatorResult && typeof operatorResult === "object" ? operatorResult : {});
+      setExpandedGroups({});
+      setFilteredGroupScenarios({});
     } catch (err) {
       toast.error("Failed to load Mock Spaces data: " + err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function toggleGroup(group) {
+    const isExpanded = !!expandedGroups[group.key];
+    if (isExpanded) {
+      setExpandedGroups((prev) => ({ ...prev, [group.key]: false }));
+      return;
+    }
+
+    setExpandedGroups((prev) => ({ ...prev, [group.key]: true }));
+    if (filteredGroupScenarios[group.key]) return;
+
+    try {
+      setLoadingGroupKey(group.key);
+      const result = await mockApi.listScenariosByEndpointAndMethod(group.endpoint, group.method);
+      const normalized = normalizeScenariosByEndpoint(result);
+      const fromEndpoint = normalized[group.endpoint] || [];
+      const scenarios = fromEndpoint
+        .filter((scenario) => String(scenario.method || "ANY").toUpperCase() === group.method)
+        .map((scenario) => ({
+          ...scenario,
+          endpoint: scenario.endpoint || group.endpoint,
+          method: String(scenario.method || group.method).toUpperCase(),
+        }));
+
+      setFilteredGroupScenarios((prev) => ({
+        ...prev,
+        [group.key]: scenarios,
+      }));
+    } catch (err) {
+      toast.error("Failed to load scenarios for group: " + err.message);
+    } finally {
+      setLoadingGroupKey("");
     }
   }
 
@@ -375,24 +434,44 @@ export default function MockServerPage() {
           </Button>
         </div>
 
-        <p className={styles.sidebarHint}>Scenarios from /mock-admin/scenarios</p>
+        <p className={styles.sidebarHint}>Scenarios grouped by method + endpoint</p>
 
         <div className={styles.endpointList}>
-          {allScenarios.map((scenario) => (
-            <button
-              key={scenario.id}
-              type="button"
-              className={`${styles.endpointItem} ${String(scenario.id) === String(selectedScenarioId) ? styles.endpointItemActive : ""}`}
-              onClick={() => {
-                setSelectedScenarioId(String(scenario.id));
-              }}
-            >
-              <strong>{scenario.name || `Scenario ${scenario.id}`}</strong>
-              <span>{scenario.endpoint}</span>
-              <span>{(scenario.conditions || []).length} conditions</span>
-            </button>
-          ))}
-          {allScenarios.length === 0 && <div className={styles.emptySmall}>No scenarios configured yet.</div>}
+          {scenarioGroups.map((group) => {
+            const isExpanded = !!expandedGroups[group.key];
+            const scenarios = filteredGroupScenarios[group.key] || group.scenarios;
+            return (
+              <div key={group.key} className={styles.groupBlock}>
+                <button
+                  type="button"
+                  className={`${styles.groupHeader} ${isExpanded ? styles.groupHeaderOpen : ""}`}
+                  onClick={() => void toggleGroup(group)}
+                >
+                  <strong>{group.method} {group.endpoint}</strong>
+                  <span>{scenarios.length} scenarios</span>
+                </button>
+                {isExpanded ? (
+                  <div className={styles.groupScenarios}>
+                    {loadingGroupKey === group.key ? <div className={styles.smallMuted}>Loading...</div> : null}
+                    {scenarios.map((scenario) => (
+                      <button
+                        key={scenario.id}
+                        type="button"
+                        className={`${styles.endpointItem} ${String(scenario.id) === String(selectedScenarioId) ? styles.endpointItemActive : ""}`}
+                        onClick={() => {
+                          setSelectedScenarioId(String(scenario.id));
+                        }}
+                      >
+                        <strong>{scenario.name || `Scenario ${scenario.id}`}</strong>
+                        <span>{(scenario.conditions || []).length} conditions</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+          {scenarioGroups.length === 0 && <div className={styles.emptySmall}>No scenarios configured yet.</div>}
         </div>
       </aside>
 
@@ -527,6 +606,7 @@ export default function MockServerPage() {
                 <div className={styles.detailsBlock}>
                   <div className={styles.detailRow}><span>Name</span><strong>{selectedScenario.name}</strong></div>
                   <div className={styles.detailRow}><span>ID</span><strong>{selectedScenario.id}</strong></div>
+                  <div className={styles.detailRow}><span>Method</span><strong>{selectedScenario.method || "ANY"}</strong></div>
                   <div className={styles.detailRow}><span>Endpoint</span><strong>{selectedScenario.endpoint}</strong></div>
                   <div className={styles.detailRow}><span>Conditions</span><strong>{(selectedScenario.conditions || []).length}</strong></div>
                 </div>

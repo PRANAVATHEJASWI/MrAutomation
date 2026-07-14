@@ -66,6 +66,11 @@ export const mockApi = {
     return request("/mock-admin/scenarios");
   },
 
+  listScenariosByEndpointAndMethod(endpoint, method) {
+    const query = new URLSearchParams({ endpoint, method });
+    return request(`/mock-admin/scenarios/filter?${query.toString()}`);
+  },
+
   upsertScenario(payload) {
     return request("/mock-admin/scenarios", {
       method: "POST",
