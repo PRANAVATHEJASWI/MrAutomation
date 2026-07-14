@@ -24,7 +24,12 @@ const EMPTY_CONDITIONS = `[
 const SCENARIO_FORM = {
   id: "",
   name: "",
+  method: "ANY",
   endpoint: "/payments/authorize",
+  delayMs: 0,
+  randomDelayMinMs: 0,
+  randomDelayMaxMs: 0,
+  faultType: "NONE",
   conditionsJson: EMPTY_CONDITIONS,
 };
 
@@ -44,6 +49,9 @@ const TRY_FORM = {
   headersJson: '{\n  "Content-Type": "application/json"\n}',
 };
 
+const METHOD_OPTIONS = ["ANY", "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
+const FAULT_OPTIONS = ["NONE", "TIMEOUT", "CONNECTION_RESET"];
+
 function parseJsonArray(raw, fieldName) {
   const parsed = JSON.parse(raw || "[]");
   if (!Array.isArray(parsed)) throw new Error(`${fieldName} must be a JSON array`);
@@ -60,12 +68,39 @@ function parseJsonObject(raw, fieldName, fallback = {}) {
 }
 
 function mapScenarioToForm(scenario) {
+  const firstResponse = scenario?.conditions?.[0]?.response || {};
   return {
     id: scenario.id || "",
     name: scenario.name || "",
+    method: (scenario.method || "ANY").toUpperCase(),
     endpoint: scenario.endpoint || "/",
+    delayMs: typeof firstResponse.delayMs === "number" ? firstResponse.delayMs : 0,
+    randomDelayMinMs: typeof firstResponse.randomDelayMinMs === "number" ? firstResponse.randomDelayMinMs : 0,
+    randomDelayMaxMs: typeof firstResponse.randomDelayMaxMs === "number" ? firstResponse.randomDelayMaxMs : 0,
+    faultType: (firstResponse.faultType || "NONE").toUpperCase(),
     conditionsJson: JSON.stringify(scenario.conditions || [], null, 2),
   };
+}
+
+function normalizeNumber(value, fallback = 0) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function applyResponseControls(conditions, form) {
+  return (Array.isArray(conditions) ? conditions : []).map((condition) => {
+    const response = condition?.response && typeof condition.response === "object" ? condition.response : {};
+    return {
+      ...condition,
+      response: {
+        ...response,
+        delayMs: normalizeNumber(form.delayMs, 0),
+        randomDelayMinMs: normalizeNumber(form.randomDelayMinMs, 0),
+        randomDelayMaxMs: normalizeNumber(form.randomDelayMaxMs, 0),
+        faultType: String(form.faultType || "NONE").toUpperCase(),
+      },
+    };
+  });
 }
 
 function normalizeScenariosByEndpoint(apiResponse) {
@@ -97,6 +132,7 @@ export default function MockServerPage() {
   const [scenarioForm, setScenarioForm] = useState(SCENARIO_FORM);
   const [generatorForm, setGeneratorForm] = useState(GENERATOR_FORM);
   const [draftScenario, setDraftScenario] = useState(null);
+  const [generatingDraft, setGeneratingDraft] = useState(false);
   const [operators, setOperators] = useState({});
   const [tryForm, setTryForm] = useState(TRY_FORM);
   const [tryResponse, setTryResponse] = useState(null);
@@ -133,6 +169,14 @@ export default function MockServerPage() {
     const exists = allScenarios.some((scenario) => String(scenario.id) === String(selectedScenarioId));
     if (!exists) setSelectedScenarioId(null);
   }, [allScenarios, selectedScenarioId]);
+
+  useEffect(() => {
+    if (!selectedScenario) return;
+    setGeneratorForm((prev) => ({
+      ...prev,
+      endpoint: selectedScenario.endpoint || prev.endpoint,
+    }));
+  }, [selectedScenario]);
 
   async function loadPageData() {
     setLoading(true);
@@ -176,8 +220,12 @@ export default function MockServerPage() {
     try {
       const payload = {
         name: scenarioForm.name.trim(),
+        method: String(scenarioForm.method || "ANY").toUpperCase(),
         endpoint: scenarioForm.endpoint.trim(),
-        conditions: parseJsonArray(scenarioForm.conditionsJson, "Conditions"),
+        conditions: applyResponseControls(
+          parseJsonArray(scenarioForm.conditionsJson, "Conditions"),
+          scenarioForm
+        ),
       };
       if (scenarioForm.id) payload.id = String(scenarioForm.id);
 
@@ -220,28 +268,43 @@ export default function MockServerPage() {
   }
 
   async function handleGenerateDraft() {
-    if (!generatorForm.endpoint.trim()) {
-      toast.error("Generator endpoint is required");
-      return;
-    }
+    if (generatingDraft) return;
     if (!generatorForm.description.trim()) {
       toast.error("Generator description is required");
       return;
     }
 
     try {
-      const draft = await mockApi.generateScenario({
-        endpoint: generatorForm.endpoint.trim(),
-        description: generatorForm.description,
-        sampleRequestBody: generatorForm.sampleRequestBody,
-        sampleHeaders: parseJsonObject(generatorForm.sampleHeaders, "Sample headers"),
-        sampleQueryParams: parseJsonObject(generatorForm.sampleQueryParams, "Sample query params"),
-        responseStructure: generatorForm.responseStructure,
-      });
+      setGeneratingDraft(true);
+      let draft;
+      if (selectedScenario) {
+        draft = await mockApi.modifyScenario({
+          id: String(selectedScenario.id),
+          existingScenario: selectedScenario,
+          description: generatorForm.description,
+          sampleRequestBody: generatorForm.sampleRequestBody,
+          responseStructure: generatorForm.responseStructure,
+        });
+      } else {
+        if (!generatorForm.endpoint.trim()) {
+          toast.error("Generator endpoint is required");
+          return;
+        }
+        draft = await mockApi.generateScenario({
+          endpoint: generatorForm.endpoint.trim(),
+          description: generatorForm.description,
+          sampleRequestBody: generatorForm.sampleRequestBody,
+          sampleHeaders: parseJsonObject(generatorForm.sampleHeaders, "Sample headers"),
+          sampleQueryParams: parseJsonObject(generatorForm.sampleQueryParams, "Sample query params"),
+          responseStructure: generatorForm.responseStructure,
+        });
+      }
       setDraftScenario(draft);
-      toast.success("Scenario draft generated");
+      toast.success(selectedScenario ? "Scenario modification draft generated" : "Scenario draft generated");
     } catch (err) {
       toast.error("Scenario generation failed: " + err.message);
+    } finally {
+      setGeneratingDraft(false);
     }
   }
 
@@ -249,6 +312,7 @@ export default function MockServerPage() {
     if (!draftScenario) return;
     setScenarioForm(mapScenarioToForm(draftScenario));
     setSelectedScenarioId(null);
+    setDraftScenario(null);
     toast.success("Draft copied to scenario editor");
   }
 
@@ -386,13 +450,57 @@ export default function MockServerPage() {
                     placeholder="High value payments"
                     required
                   />
-                  <Input
-                    label="Endpoint"
-                    value={scenarioForm.endpoint}
-                    onChange={(e) => setScenarioForm((prev) => ({ ...prev, endpoint: e.target.value }))}
-                    placeholder="/payments/authorize"
-                    required
-                  />
+                  <div className={styles.rowGrid}>
+                    <label className={styles.labelField}>
+                      Method Type
+                      <select
+                        value={scenarioForm.method}
+                        onChange={(e) => setScenarioForm((prev) => ({ ...prev, method: e.target.value }))}
+                      >
+                        {METHOD_OPTIONS.map((method) => (
+                          <option key={method} value={method}>{method}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <Input
+                      label="Endpoint"
+                      value={scenarioForm.endpoint}
+                      onChange={(e) => setScenarioForm((prev) => ({ ...prev, endpoint: e.target.value }))}
+                      placeholder="/payments/authorize"
+                      required
+                    />
+                  </div>
+                  <div className={styles.responseControlsGrid}>
+                    <Input
+                      label="delayMs"
+                      type="number"
+                      value={scenarioForm.delayMs}
+                      onChange={(e) => setScenarioForm((prev) => ({ ...prev, delayMs: e.target.value }))}
+                    />
+                    <Input
+                      label="randomDelayMinMs"
+                      type="number"
+                      value={scenarioForm.randomDelayMinMs}
+                      onChange={(e) => setScenarioForm((prev) => ({ ...prev, randomDelayMinMs: e.target.value }))}
+                    />
+                    <Input
+                      label="randomDelayMaxMs"
+                      type="number"
+                      value={scenarioForm.randomDelayMaxMs}
+                      onChange={(e) => setScenarioForm((prev) => ({ ...prev, randomDelayMaxMs: e.target.value }))}
+                    />
+                    <label className={styles.labelField}>
+                      faultType
+                      <select
+                        value={scenarioForm.faultType}
+                        onChange={(e) => setScenarioForm((prev) => ({ ...prev, faultType: e.target.value }))}
+                      >
+                        {FAULT_OPTIONS.map((faultType) => (
+                          <option key={faultType} value={faultType}>{faultType}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
                   <Textarea
                     label="Conditions JSON"
                     rows={15}
@@ -475,10 +583,16 @@ export default function MockServerPage() {
           <section className={styles.card}>
             <h3>LLM Scenario Draft</h3>
             <div className={styles.editorForm}>
+              {selectedScenario ? (
+                <span className={styles.muted}>Modify mode for selected scenario: {selectedScenario.name}</span>
+              ) : (
+                <span className={styles.muted}>Generate mode for a new scenario.</span>
+              )}
               <Input
                 label="Endpoint"
                 value={generatorForm.endpoint}
                 onChange={(e) => setGeneratorForm((prev) => ({ ...prev, endpoint: e.target.value }))}
+                readOnly={!!selectedScenario}
               />
               <Textarea
                 label="Description"
@@ -515,8 +629,12 @@ export default function MockServerPage() {
                 onChange={(e) => setGeneratorForm((prev) => ({ ...prev, responseStructure: e.target.value }))}
               />
               <div className={styles.rowActions}>
-                <Button variant="secondary" onClick={handleGenerateDraft}>Generate Draft</Button>
-                <Button onClick={applyDraftToEditor} disabled={!draftScenario}>Apply Draft</Button>
+                <Button variant="secondary" onClick={handleGenerateDraft} disabled={generatingDraft}>
+                  {generatingDraft
+                    ? (selectedScenario ? "Modifying..." : "Generating...")
+                    : (selectedScenario ? "Modify Selected Scenario" : "Generate Draft")}
+                </Button>
+                <Button onClick={applyDraftToEditor} disabled={!draftScenario || generatingDraft}>Apply Draft</Button>
               </div>
               {draftScenario && <pre className={styles.codeBlock}>{JSON.stringify(draftScenario, null, 2)}</pre>}
             </div>

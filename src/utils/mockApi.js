@@ -92,6 +92,13 @@ export const mockApi = {
     });
   },
 
+  modifyScenario(payload) {
+    return request("/mock-admin/scenarios/modify", {
+      method: "POST",
+      ...asJsonBody(payload),
+    });
+  },
+
   listOperators() {
     return request("/mock-admin/operators");
   },

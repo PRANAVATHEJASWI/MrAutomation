@@ -177,6 +177,12 @@
   gap: 10px;
 }
 
+.responseControlsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .labelField {
   display: flex;
   flex-direction: column;
@@ -338,6 +344,10 @@
   }
 
   .rowGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .responseControlsGrid {
     grid-template-columns: 1fr;
   }
 
