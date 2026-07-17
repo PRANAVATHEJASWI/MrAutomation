@@ -10,12 +10,13 @@ function authHeaders() {
 }
 
 async function request(path, options = {}) {
+  const { includeMeta = false, ...fetchOptions } = options;
   const url = `${MOCK_API_BASE_URL}${path}`;
   const response = await fetch(url, {
-    ...options,
+    ...fetchOptions,
     headers: {
       ...authHeaders(),
-      ...(options.headers || {}),
+      ...(fetchOptions.headers || {}),
     },
   });
 
@@ -30,6 +31,16 @@ async function request(path, options = {}) {
     }
   } catch {
     payload = null;
+  }
+
+  if (includeMeta) {
+    return {
+      ok: response.ok,
+      statusCode: response.status,
+      statusText: response.statusText,
+      headers: Object.fromEntries(response.headers.entries()),
+      body: payload,
+    };
   }
 
   if (!response.ok) {
@@ -104,6 +115,13 @@ export const mockApi = {
     });
   },
 
+  addDefaultScenario(payload) {
+    return request("/mock-admin/scenarios/default", {
+      method: "POST",
+      ...asJsonBody(payload),
+    });
+  },
+
   listOperators() {
     return request("/mock-admin/operators");
   },
@@ -116,6 +134,7 @@ export const mockApi = {
       const query = new URLSearchParams();
       query.set("body", body || "{}");
       return request(`/mock${normalizedPath}?${query.toString()}`, {
+        includeMeta: true,
         method: "GET",
         headers: {
           ...(headers || {}),
@@ -124,6 +143,7 @@ export const mockApi = {
     }
 
     return request(`/mock${normalizedPath}`, {
+      includeMeta: true,
       method: upperMethod,
       headers: {
         "Content-Type": "application/json",

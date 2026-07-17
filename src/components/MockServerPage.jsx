@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { mockApi } from "../utils/mockApi";
 import Button from "./ui/button/Button";
 import Input from "./ui/input/Input";
+import Modal from "./ui/modal/Modal";
 import Textarea from "./ui/textarea/Textarea";
 import { toast } from "./ui/toast/toast";
 import styles from "./MockServerPage.module.css";
@@ -47,6 +48,13 @@ const TRY_FORM = {
   path: "/payments/authorize",
   body: '{\n  "amount": 999,\n  "customerTier": "standard"\n}',
   headersJson: '{\n  "Content-Type": "application/json"\n}',
+};
+
+const DEFAULT_SCENARIO_FORM = {
+  endpoint: "/payments/authorize",
+  method: "POST",
+  responseJson:
+    '{\n  "status": 200,\n  "headers": {\n    "Content-Type": "application/json"\n  },\n  "body": {\n    "message": "default fallback response"\n  }\n}',
 };
 
 const METHOD_OPTIONS = ["ANY", "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
@@ -142,6 +150,9 @@ export default function MockServerPage() {
   const [tryError, setTryError] = useState("");
   const [tryLatencyMs, setTryLatencyMs] = useState(null);
   const [runningTry, setRunningTry] = useState(false);
+  const [showDefaultScenarioModal, setShowDefaultScenarioModal] = useState(false);
+  const [defaultScenarioForm, setDefaultScenarioForm] = useState(DEFAULT_SCENARIO_FORM);
+  const [savingDefaultScenario, setSavingDefaultScenario] = useState(false);
 
   const allScenarios = useMemo(() => {
     return Object.entries(scenariosByEndpoint || {})
@@ -395,6 +406,13 @@ export default function MockServerPage() {
       });
       setTryLatencyMs(Date.now() - started);
       setTryResponse(response);
+      if (!response?.ok) {
+        const body = response?.body;
+        const bodyMessage = typeof body === "string"
+          ? body
+          : body?.message || body?.error || "";
+        setTryError(bodyMessage || `Request failed with ${response?.statusCode ?? "unknown status"}`);
+      }
     } catch (err) {
       setTryError(err.message);
       setTryResponse(null);
@@ -407,6 +425,42 @@ export default function MockServerPage() {
     const target = `${mockApi.getBaseUrl()}/mock${tryForm.path.startsWith("/") ? "" : "/"}${tryForm.path}`;
     navigator.clipboard.writeText(target);
     toast.success("Mock URL copied");
+  }
+
+  async function handleCreateDefaultScenario() {
+    if (!defaultScenarioForm.endpoint.trim()) {
+      toast.error("Endpoint is required");
+      return;
+    }
+
+    try {
+      const response = parseJsonObject(defaultScenarioForm.responseJson, "Response");
+      const method = String(defaultScenarioForm.method || "ANY").toUpperCase();
+      const endpoint = defaultScenarioForm.endpoint.trim();
+
+      setSavingDefaultScenario(true);
+      await mockApi.addDefaultScenario({
+        name: `DEFAULT_${method}_${endpoint}`,
+        endpoint,
+        method,
+        conditions: [
+          {
+            operator: "ALL",
+            whenExpr: "",
+            rules: [],
+            response,
+          },
+        ],
+      });
+
+      toast.success("Default scenario created");
+      setShowDefaultScenarioModal(false);
+      await loadPageData();
+    } catch (err) {
+      toast.error("Failed to create default scenario: " + err.message);
+    } finally {
+      setSavingDefaultScenario(false);
+    }
   }
 
   return (
@@ -428,6 +482,19 @@ export default function MockServerPage() {
             }}
           >
             Create Scenario
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setDefaultScenarioForm((prev) => ({
+                ...prev,
+                endpoint: selectedScenario?.endpoint || prev.endpoint,
+                method: selectedScenario?.method || prev.method,
+              }));
+              setShowDefaultScenarioModal(true);
+            }}
+          >
+            Create Default Scenario
           </Button>
           <Button variant="danger" onClick={handleClearAll}>
             Clear All
@@ -655,7 +722,15 @@ export default function MockServerPage() {
                   {tryLatencyMs != null && <span className={styles.muted}>{tryLatencyMs} ms</span>}
                 </div>
                 {tryError ? <div className={styles.errorBanner}>{tryError}</div> : null}
-                {tryResponse != null ? <pre className={styles.codeBlock}>{JSON.stringify(tryResponse, null, 2)}</pre> : null}
+                {tryResponse != null ? (
+                  <>
+                    <div className={styles.responseMeta}>
+                      <span className={styles.statusPill}>Status Code: {tryResponse.statusCode ?? "-"}</span>
+                      {tryResponse.statusText ? <span className={styles.statusText}>{tryResponse.statusText}</span> : null}
+                    </div>
+                    <pre className={styles.codeBlock}>{JSON.stringify(tryResponse.body, null, 2)}</pre>
+                  </>
+                ) : null}
               </div>
             </section>
           </div>
@@ -722,6 +797,52 @@ export default function MockServerPage() {
 
         </div>
       </main>
+
+      {showDefaultScenarioModal ? (
+        <Modal title="Create Default Scenario" onClose={() => !savingDefaultScenario && setShowDefaultScenarioModal(false)} size="md">
+          <div className={styles.editorForm}>
+            <Input
+              label="Endpoint"
+              value={defaultScenarioForm.endpoint}
+              onChange={(e) => setDefaultScenarioForm((prev) => ({ ...prev, endpoint: e.target.value }))}
+              placeholder="/payments/authorize"
+            />
+            <label className={styles.labelField}>
+              Method
+              <select
+                value={defaultScenarioForm.method}
+                onChange={(e) => setDefaultScenarioForm((prev) => ({ ...prev, method: e.target.value }))}
+              >
+                {METHOD_OPTIONS.map((method) => (
+                  <option key={method} value={method}>{method}</option>
+                ))}
+              </select>
+            </label>
+            <Textarea
+              label="Response (JSON)"
+              rows={12}
+              mono
+              value={defaultScenarioForm.responseJson}
+              onChange={(e) => setDefaultScenarioForm((prev) => ({ ...prev, responseJson: e.target.value }))}
+            />
+            <p className={styles.muted}>
+              The request sends empty condition matching fields (rules: [], whenExpr: "").
+            </p>
+            <div className={styles.rowActions}>
+              <Button
+                variant="secondary"
+                onClick={() => setShowDefaultScenarioModal(false)}
+                disabled={savingDefaultScenario}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleCreateDefaultScenario} disabled={savingDefaultScenario}>
+                {savingDefaultScenario ? "Creating..." : "Create Default Scenario"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
     </div>
   );
 }
