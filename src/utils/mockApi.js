@@ -4,6 +4,33 @@ const MOCK_API_BASE_URL =
   import.meta.env.VITE_MOCK_API_BASE_URL?.replace(/\/$/, "") ||
   "http://localhost:8010";
 
+const MOCK_API_CONTEXT_PATH =
+  (import.meta.env.VITE_MOCK_API_CONTEXT_PATH || "/mockservice").trim();
+
+function normalizeContextPath(path) {
+  if (!path) return "";
+  const withLeadingSlash = path.startsWith("/") ? path : `/${path}`;
+  return withLeadingSlash.replace(/\/$/, "");
+}
+
+const MOCK_API_CONTEXT_PREFIX = normalizeContextPath(MOCK_API_CONTEXT_PATH);
+const BASE_INCLUDES_CONTEXT =
+  MOCK_API_CONTEXT_PREFIX &&
+  (MOCK_API_BASE_URL === MOCK_API_CONTEXT_PREFIX ||
+    MOCK_API_BASE_URL.endsWith(MOCK_API_CONTEXT_PREFIX));
+
+function withContextPath(path) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  if (!MOCK_API_CONTEXT_PREFIX || BASE_INCLUDES_CONTEXT) return normalizedPath;
+  if (
+    normalizedPath === MOCK_API_CONTEXT_PREFIX ||
+    normalizedPath.startsWith(`${MOCK_API_CONTEXT_PREFIX}/`)
+  ) {
+    return normalizedPath;
+  }
+  return `${MOCK_API_CONTEXT_PREFIX}${normalizedPath}`;
+}
+
 function authHeaders() {
   const token = getAuthToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -11,7 +38,7 @@ function authHeaders() {
 
 async function request(path, options = {}) {
   const { includeMeta = false, ...fetchOptions } = options;
-  const url = `${MOCK_API_BASE_URL}${path}`;
+  const url = `${MOCK_API_BASE_URL}${withContextPath(path)}`;
   const response = await fetch(url, {
     ...fetchOptions,
     headers: {
@@ -70,7 +97,10 @@ function asJsonBody(data) {
 
 export const mockApi = {
   getBaseUrl() {
-    return MOCK_API_BASE_URL;
+    if (!MOCK_API_CONTEXT_PREFIX || BASE_INCLUDES_CONTEXT) {
+      return MOCK_API_BASE_URL;
+    }
+    return `${MOCK_API_BASE_URL}${MOCK_API_CONTEXT_PREFIX}`;
   },
 
   listScenarios() {

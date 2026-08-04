@@ -547,8 +547,9 @@ export default function MockServerPage() {
           <div>
             <h1>Scenario-Driven Mock Spaces</h1>
             <p>
-              Design conditions via /mock-admin/scenarios, generate drafts via /mock-admin/scenarios/generate,
-              and test runtime output through /mock/**.
+              Design conditions via /mockservice/mock-admin/scenarios, generate drafts via
+              /mockservice/mock-admin/scenarios/generate, and test runtime output through
+              /mockservice/mock/**.
             </p>
             <code>{mockApi.getBaseUrl()}</code>
           </div>
